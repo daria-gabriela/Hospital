@@ -41,6 +41,14 @@ public class Doctor extends Person {
         super(firstname, lastname);
     }
 
+    public Doctor(int doctorId, String firstName, String lastName, String stampCode) {
+        super(firstName, lastName);
+        this.id = doctorId;
+        validateParafaCode(stampCode);
+        this.parafaCode = stampCode;
+        usedParafaCodes.add(stampCode);
+    }
+
     private void validateParafaCode(String code) {
         if (code == null || code.trim().isEmpty()) {
             throw new IllegalArgumentException("❌ Codul parafei nu poate fi null sau gol.");

@@ -16,7 +16,6 @@ public class MedicalAppointmentService {
         loadFromDatabase();
     }
 
-
     public void loadFromDatabase() {
         appointments.clear();
 
@@ -47,7 +46,6 @@ public class MedicalAppointmentService {
         }
     }
 
-
     private Patient getPatientById(int id) {
         try (Connection conn = DatabaseConnection.getConnection()) {
             String sql = "SELECT * FROM patients WHERE id = ?";
@@ -64,7 +62,7 @@ public class MedicalAppointmentService {
                         rs.getString("address"),
                         BloodGroup.valueOf(rs.getString("blood_group")),
                         RhType.valueOf(rs.getString("rh_type")),
-                        false // persisted
+                        false
                 );
                 p.setId(id);
                 return p;
@@ -73,7 +71,9 @@ public class MedicalAppointmentService {
             System.err.println("\u274C Eroare JDBC la getPatientById: " + e.getMessage());
         }
         return null;
-    }private MedicalAppointment mapRowToAppointment(Map<String, Object> row) {
+    }
+
+    private MedicalAppointment mapRowToAppointment(Map<String, Object> row) {
         int id = (int) row.get("id");
         int patientId = (int) row.get("patient_id");
         int doctorId = (int) row.get("doctor_id");
@@ -95,8 +95,11 @@ public class MedicalAppointmentService {
         Doctor doctor = getDoctorById(doctorId);
         Room room = new Room(roomNumber, "Unknown Type", null, false);
 
+        MedicalAppointment app = new MedicalAppointment(patient, doctor, dateTime, reason, room);
+        app.setId(id);
+
         AuditService.getInstance().log("MAP_APPOINTMENT_ROW: id=" + id);
-        return new MedicalAppointment(patient, doctor, dateTime, reason, room);
+        return app;
     }
 
     private Doctor getDoctorById(int id) {
@@ -119,11 +122,10 @@ public class MedicalAppointmentService {
         return null;
     }
 
-
     public void addAppointment(MedicalAppointment appointment) {
         try (Connection conn = DatabaseConnection.getConnection()) {
             String sql = "INSERT INTO medical_appointments (patient_id, doctor_id, room_number, date_time, reason) VALUES (?, ?, ?, ?, ?)";
-            PreparedStatement stmt = conn.prepareStatement(sql);
+            PreparedStatement stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
             stmt.setInt(1, appointment.getPatient().getId());
             stmt.setInt(2, appointment.getDoctor().getId());
             if (appointment.getRoom() != null)
@@ -132,13 +134,23 @@ public class MedicalAppointmentService {
                 stmt.setNull(3, Types.INTEGER);
             stmt.setTimestamp(4, Timestamp.valueOf(appointment.getDateTime()));
             stmt.setString(5, appointment.getReason());
-            stmt.executeUpdate();
+
+            int affectedRows = stmt.executeUpdate();
+            if (affectedRows > 0) {
+                ResultSet generatedKeys = stmt.getGeneratedKeys();
+                if (generatedKeys.next()) {
+                    int id = generatedKeys.getInt(1);
+                    appointment.setId(id);
+                    System.out.println("✅ Programare adăugată cu ID: " + id);
+                }
+            }
+
             AuditService.getInstance().log("ADD_APPOINTMENT: DB INSERT SUCCESS");
         } catch (SQLException e) {
             System.err.println("❌ Eroare JDBC la inserare programare: " + e.getMessage());
+            AuditService.getInstance().log("ADD_APPOINTMENT_FAILED: " + e.getMessage());
         }
     }
-
 
     private MedicalAppointment mapResultSetToAppointment(ResultSet rs) throws SQLException {
         int id = rs.getInt("id");
@@ -282,7 +294,9 @@ public class MedicalAppointmentService {
                 Doctor doctor = allDoctors.get(doctorId);
                 Room room = new Room(roomNumber, "Unknown", null, false);
 
-                appointments.add(new MedicalAppointment( patient, doctor, dateTime, reason, room));
+                MedicalAppointment appointment = new MedicalAppointment(patient, doctor, dateTime, reason, room);
+                appointment.setId(id);
+                appointments.add(appointment);
             }
 
             AuditService.getInstance().log("GET_APPOINTMENTS_BY_PATIENT_ID: " + patientId);
@@ -317,8 +331,9 @@ public class MedicalAppointmentService {
                 Doctor doctor = allDoctors.get(doctorId);
                 Room room = new Room(roomNumber, "Unknown", null, false);
 
-                appointments.add(new MedicalAppointment(patient, doctor, dateTime, reason, room));
-            }
+                MedicalAppointment appointment = new MedicalAppointment(patient, doctor, dateTime, reason, room);
+                appointment.setId(id);
+                appointments.add(appointment);            }
 
             AuditService.getInstance().log("GET_APPOINTMENTS_BY_DATE: " + date);
         } catch (SQLException e) {

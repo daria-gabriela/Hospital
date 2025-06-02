@@ -238,29 +238,47 @@ public class DiagnosisService {
     }
 
     public Optional<Diagnosis> getDiagnosisById(int id) {
-        try (Connection conn = DatabaseConnection.getConnection()) {
-            String sql = "SELECT * FROM diagnoses WHERE id = ?";
-            PreparedStatement stmt = conn.prepareStatement(sql);
+        String sql = """
+        SELECT d.*, doc.id AS doctor_id, doc.first_name, doc.last_name, doc.parafa_code
+        FROM diagnoses d
+        LEFT JOIN doctors doc ON d.doctor_id = doc.id
+        WHERE d.id = ?
+    """;
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
             stmt.setInt(1, id);
             ResultSet rs = stmt.executeQuery();
-            if (rs.next()) {
-                Diagnosis diagnosis = new Diagnosis(
-                        rs.getString("name"),
-                        rs.getString("description"),
-                        rs.getDate("date").toLocalDate(),
-                        null, // Doctor will be set later
-                        rs.getInt("medical_record_id")
-                );
 
-                diagnosis.setId(rs.getInt("id"));
+            if (rs.next()) {
+                String name = rs.getString("name");
+                String description = rs.getString("description");
+                LocalDate date = rs.getDate("date").toLocalDate();
+                int medicalRecordId = rs.getInt("medical_record_id");
+
+                Doctor doctor = null;
+                int doctorId = rs.getInt("doctor_id");
+                if (!rs.wasNull()) {
+                    String firstName = rs.getString("first_name");
+                    String lastName = rs.getString("last_name");
+                    String stampCode = rs.getString("parafa_code");
+
+                    doctor = new Doctor( doctorId, firstName, lastName, stampCode);
+                }
+
+                Diagnosis diagnosis = new Diagnosis(name, description, date, doctor, medicalRecordId);
+                diagnosis.setId(id);
                 return Optional.of(diagnosis);
             }
 
         } catch (SQLException e) {
             System.err.println("❌ Eroare JDBC în getDiagnosisById: " + e.getMessage());
         }
+
         return Optional.empty();
     }
+
 
     public boolean addPrescriptionToDiagnosis(Diagnosis diagnosis, Prescription prescription, PrescriptionService prescriptionService) {
         if (diagnosis == null || prescription == null) return false;

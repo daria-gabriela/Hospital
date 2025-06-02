@@ -10,7 +10,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class MedicalAppointment {
     private static final AtomicInteger idCounter = new AtomicInteger(1); // Generator de ID-uri unice
 
-    private final int id;                  // ID unic al programării (generat automat)
+    private  int id;                  // ID unic al programării (generat automat)
     private Patient patient;              // Pacientul programat
     private Doctor doctor;                // Doctorul responsabil
     private LocalDateTime dateTime;       // Data și ora programării
@@ -108,4 +108,7 @@ public class MedicalAppointment {
                 '}';
     }
 
+    public void setId(int id) {
+        this.id = id;
+    }
 }

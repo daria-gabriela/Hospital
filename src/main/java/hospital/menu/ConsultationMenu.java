@@ -84,8 +84,6 @@ public class ConsultationMenu {
                 System.out.println("❌ Doctorul nu a fost găsit.");
                 return;
             }
-            Doctor doctor = optionalDoctor.get();
-
             System.out.print("Nume diagnostic: ");
             String name = scanner.nextLine();
             Optional<Diagnosis> optionalDiagnosis = diagnosisService.findDiagnosisByName(name);
@@ -97,9 +95,11 @@ public class ConsultationMenu {
                 String desc = scanner.nextLine();
                 System.out.print("Dată diagnostic (yyyy-MM-dd): ");
                 LocalDate diagDate = LocalDate.parse(scanner.nextLine());
-
                 int medRecId = patientService.getMedicalRecordForPatient(cnp).getId();
+
+                Doctor doctor = optionalDoctor.get();
                 diagnosis = new Diagnosis(name, desc, diagDate, doctor, medRecId);
+
             } else {
                 diagnosis = optionalDiagnosis.get();
             }
@@ -110,6 +110,7 @@ public class ConsultationMenu {
             System.out.print("Observații (opțional): ");
             String notes = scanner.nextLine();
 
+            Doctor doctor = optionalDoctor.get();
             Consultation consultation = consultationService.createConsultation(patient, doctor, date, diagnosis, notes);
             System.out.println("✅ Consultație înregistrată cu ID: " + consultation.getId());
             AuditService.getInstance().log("CREATE_CONSULTATION: ID=" + consultation.getId());
@@ -214,14 +215,16 @@ public class ConsultationMenu {
                     }
                 }
                 case 2 -> {
-                    System.out.print("Nume diagnostic nou: ");
+                    System.out.print("Nume diagnostic: ");
                     String diagName = scanner.nextLine();
-                    Optional<Diagnosis> optionalDiag = diagnosisService.findDiagnosisByName(diagName);
-                    if (optionalDiag.isPresent()) {
-                        consultation.setDiagnosis(optionalDiag.get());
+                    Optional<Diagnosis> optionalDiagnosis = diagnosisService.findDiagnosisByName(diagName);
+                    if (optionalDiagnosis.isPresent()) {
+                        System.out.print("Nume diagnostic nou: ");
+                        String diag = scanner.nextLine();
+                        diagnosisService.updateDiagnosisNameById(optionalDiagnosis.get().getId(), diag);
                         System.out.println("✅ Diagnostic actualizat.");
                     } else {
-                        System.out.println("❌ Diagnosticul nu a fost găsit.");
+                        System.out.println("❌ Diagnostic inexistent");
                     }
                 }
                 case 3 -> {

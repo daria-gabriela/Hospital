@@ -247,7 +247,7 @@ public class ConsultationService {
 
     public void saveConsultation(Consultation consultation) {
         String updateSql = """
-        UPDATE medical_appointments 
+        UPDATE consultations
         SET patient_id = ?, doctor_id = ?, diagnosis_id = ?, date = ?, notes = ?
         WHERE id = ?
     """;

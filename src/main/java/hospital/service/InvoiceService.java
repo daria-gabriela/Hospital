@@ -46,6 +46,12 @@ public class InvoiceService {
 
     public void loadInvoicesFromDB() {
         invoices.clear();
+
+        // Curăță listele de facturi ale fiecărui pacient
+        for (Patient patient : patientService.getAllPatients()) {
+            patient.getInvoices().clear(); // 🧼 Elimină duplicările
+        }
+
         try (Connection conn = DatabaseConnection.getConnection()) {
             String sql = "SELECT * FROM invoices";
             PreparedStatement stmt = conn.prepareStatement(sql);
@@ -62,6 +68,7 @@ public class InvoiceService {
                 patientOpt.ifPresent(p -> {
                     Invoice invoice = new Invoice(id, p, amount, desc, date, isPaid);
                     invoices.add(invoice);
+                    ///p.getInvoices().add(invoice); // ✅ atașare directă la pacient
                 });
             }
             AuditService.getInstance().log("LOAD_INVOICES_FROM_DB");
@@ -69,6 +76,7 @@ public class InvoiceService {
             System.err.println("❌ Eroare JDBC la încărcare facturi: " + e.getMessage());
         }
     }
+
 
     public List<Invoice> getInvoicesForPatient(Patient patient) {
         List<Invoice> result = new ArrayList<>();
