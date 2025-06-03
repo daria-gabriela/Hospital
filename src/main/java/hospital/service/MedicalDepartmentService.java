@@ -42,6 +42,7 @@ public class MedicalDepartmentService {
         try (Connection conn = DatabaseConnection.getConnection();
              Statement stmt = conn.createStatement()) {
 
+            // === 1. Încarcă departamente ===
             ResultSet rs = stmt.executeQuery("SELECT * FROM medical_departments");
             while (rs.next()) {
                 MedicalDepartment department = new MedicalDepartment(
@@ -53,7 +54,12 @@ public class MedicalDepartmentService {
                 departments.add(department);
             }
 
-            ResultSet drs = stmt.executeQuery("SELECT dd.department_id, d.* FROM department_doctors dd JOIN doctors d ON dd.doctor_id = d.id");
+            // === 2. Încarcă doctori + asociere în departamente ===
+            ResultSet drs = stmt.executeQuery("""
+            SELECT dd.department_id, d.* 
+            FROM department_doctors dd 
+            JOIN doctors d ON dd.doctor_id = d.id
+        """);
             while (drs.next()) {
                 int deptId = drs.getInt("department_id");
                 Optional<MedicalDepartment> deptOpt = getDepartmentById(deptId);
@@ -74,58 +80,56 @@ public class MedicalDepartmentService {
                 }
             }
 
-            ResultSet nrs = stmt.executeQuery("""
-                SELECT DISTINCT dn.nurse_id, n.*
-                FROM doctor_nurses dn
-                JOIN nurses n ON dn.nurse_id = n.id
-            """);
+            // === 3. Încarcă asistentele din legăturile reale (doar cele utilizate) ===
+            ResultSet ddn = stmt.executeQuery("""
+            SELECT ddn.department_id, ddn.doctor_id, ddn.nurse_id,
+                   n.first_name, n.last_name, n.email, n.phone_number,
+                   n.shift, n.staff_code, n.certifications,
+                   n.years_of_experience, n.is_on_call
+            FROM department_doctor_nurse ddn
+            JOIN nurses n ON ddn.nurse_id = n.id
+        """);
 
-            while (nrs.next()) {
+            while (ddn.next()) {
+                int deptId = ddn.getInt("department_id");
+                int doctorId = ddn.getInt("doctor_id");
+
                 Nurse nurse = new Nurse(
-                        nrs.getString("first_name"),
-                        nrs.getString("last_name"),
-                        nrs.getString("email"),
-                        nrs.getString("phone_number"),
-                        Shift.valueOf(nrs.getString("shift").toUpperCase()),
-                        nrs.getString("staff_code"),
-                        nrs.getString("certifications"),
-                        nrs.getInt("years_of_experience"),
-                        nrs.getBoolean("is_on_call")
+                        ddn.getString("first_name"),
+                        ddn.getString("last_name"),
+                        ddn.getString("email"),
+                        ddn.getString("phone_number"),
+                        Shift.valueOf(ddn.getString("shift").toUpperCase()),
+                        ddn.getString("staff_code"),
+                        ddn.getString("certifications"),
+                        ddn.getInt("years_of_experience"),
+                        ddn.getBoolean("is_on_call")
                 );
-                nurse.setId(nrs.getInt("nurse_id"));
-                nurseById.put(nurse.getId(), nurse);
-            }
+                nurse.setId(ddn.getInt("nurse_id"));
+                nurseById.putIfAbsent(nurse.getId(), nurse);
 
-            ResultSet docNurseRs = stmt.executeQuery("SELECT * FROM doctor_nurses");
-            while (docNurseRs.next()) {
-                int doctorId = docNurseRs.getInt("doctor_id");
-                int nurseId = docNurseRs.getInt("nurse_id");
-
+                MedicalDepartment dept = getDepartmentById(deptId).orElse(null);
                 Doctor doctor = doctorById.get(doctorId);
-                Nurse nurse = nurseById.get(nurseId);
 
-                if (doctor != null && nurse != null) {
-                    for (MedicalDepartment dept : departments) {
-                        if (dept.getDoctors().contains(doctor)) {
-                            dept.addNurse(nurse);
-                            dept.addNurseToDoctor(doctor, nurse);
-                        }
-                    }
+                if (dept != null && doctor != null) {
+                    dept.addNurse(nurse);
+                    dept.addNurseToDoctor(doctor, nurse);
                 }
             }
 
+            // === 4. Camere asociate departamentelor ===
             for (Room room : roomService.getAllRooms()) {
                 int deptId = room.getDepartment() != null ? room.getDepartment().getId() : -1;
                 getDepartmentById(deptId).ifPresent(dept -> {
-                    room.setDepartment(dept); // 🔄 sincronizează referința
+                    room.setDepartment(dept);
                     dept.addRoom(room);
                 });
             }
 
-
             AuditService.getInstance().log("LOAD_DEPARTMENTS_FROM_DB");
 
         } catch (SQLException e) {
+            System.err.println("❌ Eroare la încărcarea departamentelor: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -290,12 +294,28 @@ public class MedicalDepartmentService {
         }).orElse(false);
     }
 
-    public boolean addNurseToDoctor(int departmentId, Doctor doctor, Nurse nurse) {
-        return getDepartmentById(departmentId).map(d -> {
-            boolean success = d.addNurseToDoctor(doctor, nurse);
-            AuditService.getInstance().log((success ? "ADD" : "FAILED_ADD") + "_NURSE_TO_DOCTOR: DeptID=" + departmentId);
-            return success;
-        }).orElse(false);
+
+    public boolean addNurseToDoctor(Doctor doctor, Nurse nurse) {
+        boolean added = false;
+
+        for (MedicalDepartment dept : departments) {
+            if (dept.getDoctors().contains(doctor)) {
+                boolean addedToDoctor = dept.addNurseToDoctor(doctor, nurse);
+                boolean addedToDepartment = dept.addNurse(nurse); // ✅ Asta lipsea
+
+                if (addedToDoctor || addedToDepartment) {
+                    added = true;
+                }
+            }
+        }
+
+        if (added) {
+            AuditService.getInstance().log("ADD_NURSE_TO_DOCTOR_ALL_DEPARTMENTS: DoctorID=" + doctor.getId() + ", NurseID=" + nurse.getId());
+        } else {
+            AuditService.getInstance().log("FAILED_ADD_NURSE_TO_DOCTOR_ALL_DEPARTMENTS: DoctorID=" + doctor.getId());
+        }
+
+        return added;
     }
 
     public boolean removeNurseFromDoctor(int departmentId, Doctor doctor, Nurse nurse) {
@@ -468,6 +488,80 @@ public class MedicalDepartmentService {
             }
 
             AuditService.getInstance().log("REFRESH_ROOMS_AND_DEPARTMENTS");
+        }
+    }
+
+
+    public boolean addNurseToDoctorInSpecificDepartment(int departmentId, Doctor doctor, Nurse nurse) {
+        Optional<MedicalDepartment> optional = getDepartmentById(departmentId);
+        if (optional.isEmpty()) return false;
+
+        MedicalDepartment dept = optional.get();
+        if (!dept.getDoctors().contains(doctor)) return false;
+
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            String check = "SELECT 1 FROM department_doctor_nurse WHERE department_id = ? AND doctor_id = ? AND nurse_id = ?";
+            PreparedStatement checkStmt = conn.prepareStatement(check);
+            checkStmt.setInt(1, departmentId);
+            checkStmt.setInt(2, doctor.getId());
+            checkStmt.setInt(3, nurse.getId());
+            ResultSet rs = checkStmt.executeQuery();
+            if (rs.next()) {
+                System.out.println("⚠️ Această asociere există deja.");
+                return false;
+            }
+
+            String insert = "INSERT INTO department_doctor_nurse (department_id, doctor_id, nurse_id) VALUES (?, ?, ?)";
+            PreparedStatement insertStmt = conn.prepareStatement(insert);
+            insertStmt.setInt(1, departmentId);
+            insertStmt.setInt(2, doctor.getId());
+            insertStmt.setInt(3, nurse.getId());
+            insertStmt.executeUpdate();
+
+            dept.addNurse(nurse); // în lista generală
+            dept.addNurseToDoctor(doctor, nurse); // legat direct
+
+            AuditService.getInstance().log("ADD_NURSE_TO_DOCTOR_IN_DEPARTMENT: DeptID=" + departmentId);
+            return true;
+        } catch (SQLException e) {
+            System.err.println("❌ Eroare la asocierea nurse-doctor-departament: " + e.getMessage());
+        }
+
+        return false;
+    }
+    public boolean addNurseToDoctorInAllDepartments(Doctor doctor, Nurse nurse) {
+        boolean success = false;
+
+        for (MedicalDepartment dept : departments) {
+            if (dept.getDoctors().contains(doctor)) {
+                boolean added = dept.addNurseToDoctor(doctor, nurse);
+                if (added) {
+                    dept.addNurse(nurse);
+                    insertDoctorNurseRelation(dept.getId(), doctor.getId(), nurse.getId());
+                    success = true;
+                }
+            }
+        }
+
+        if (success) {
+            AuditService.getInstance().log("ADD_NURSE_TO_DOCTOR_ALL_DEPARTMENTS");
+        }
+
+        return success;
+    }
+    private void insertDoctorNurseRelation(int departmentId, int doctorId, int nurseId) {
+        String sql = "INSERT INTO department_doctor_nurse (department_id, doctor_id, nurse_id) VALUES (?, ?, ?)";
+
+        try (Connection conn = DatabaseConnection.getConnection();
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+
+            stmt.setInt(1, departmentId);
+            stmt.setInt(2, doctorId);
+            stmt.setInt(3, nurseId);
+            stmt.executeUpdate();
+
+        } catch (SQLException e) {
+            System.err.println("❌ Eroare la inserarea relației doctor-asistentă-departament: " + e.getMessage());
         }
     }
 

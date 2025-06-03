@@ -84,8 +84,12 @@ public class MedicalDepartment {
         return false;
     }
 
-    public void addNurse(Nurse nurse) {
-        allNurses.add(nurse);
+    public boolean addNurse(Nurse nurse) {
+        if (!allNurses.contains(nurse)) {
+            allNurses.add(nurse);
+            return true;
+        }
+        return false;
     }
 
     public boolean removeNurse(Nurse nurse) {

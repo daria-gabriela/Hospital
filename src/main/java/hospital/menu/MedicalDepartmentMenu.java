@@ -269,14 +269,17 @@ public class MedicalDepartmentMenu {
             nurse = new NurseMenu(nurseService).createNurseFromInput();
         }
 
-        boolean added = departmentService.addNurseToDoctor(dept.getId(), doctor, nurse);
-        if (added) {
-            departmentService.addNurseToDoctorInDb(doctor.getId(), nurse.getId());
-            System.out.println("✅ Asistentă adăugată doctorului.");
+        // 🔁 Asociază în toate departamentele unde există doctorul
+        boolean success = departmentService.addNurseToDoctorInAllDepartments(doctor, nurse);
+
+        if (success) {
+            System.out.println("✅ Asistentă adăugată doctorului în toate departamentele sale.");
         } else {
-            System.out.println("❌ Eroare la asocierea asistentei.");
+            System.out.println("❌ Eroare la asociere (deja există sau invalid).");
         }
     }
+
+
 
     private MedicalDepartment selectDepartment() {
         departmentService.displayDepartmentsSorted(true);

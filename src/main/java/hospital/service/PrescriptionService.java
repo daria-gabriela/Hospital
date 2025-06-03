@@ -48,29 +48,43 @@ public class PrescriptionService {
         if (prescription == null) {
             throw new IllegalArgumentException("Rețeta nu poate fi null.");
         }
-        prescriptions.add(prescription);
 
         Connection conn = DatabaseConnection.getInstance().getConnection();
-        PreparedStatement stmt = conn.prepareStatement("INSERT INTO prescriptions (id, medication, dosage, start_date, end_date, date_issued, auto_renew, renew_date, diagnosis_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        stmt.setInt(1, prescription.getId());
-        stmt.setString(2, prescription.getMedication());
-        stmt.setString(3, prescription.getDosage());
-        stmt.setDate(4, Date.valueOf(prescription.getStartDate()));
-        stmt.setDate(5, Date.valueOf(prescription.getEndDate()));
-        stmt.setDate(6, Date.valueOf(prescription.getDateIssued()));
-        stmt.setBoolean(7, prescription.isAutoRenew());
+        String sql = "INSERT INTO prescriptions (medication, dosage, start_date, end_date, date_issued, auto_renew, renew_date, diagnosis_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+
+        PreparedStatement stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
+        stmt.setString(1, prescription.getMedication());
+        stmt.setString(2, prescription.getDosage());
+        stmt.setDate(3, Date.valueOf(prescription.getStartDate()));
+        stmt.setDate(4, Date.valueOf(prescription.getEndDate()));
+        stmt.setDate(5, Date.valueOf(prescription.getDateIssued()));
+        stmt.setBoolean(6, prescription.isAutoRenew());
+
         if (prescription.getRenewDate() != null) {
-            stmt.setDate(8, Date.valueOf(prescription.getRenewDate()));
+            stmt.setDate(7, Date.valueOf(prescription.getRenewDate()));
         } else {
-            stmt.setNull(8, Types.DATE);
+            stmt.setNull(7, Types.DATE);
         }
-        stmt.setInt(9, prescription.getDiagnosisId());
+
+        stmt.setInt(8, prescription.getDiagnosisId());
 
         stmt.executeUpdate();
+
+        // Obține ID-ul generat de MySQL
+        ResultSet generatedKeys = stmt.getGeneratedKeys();
+        if (generatedKeys.next()) {
+            int generatedId = generatedKeys.getInt(1);
+            prescription.setId(generatedId);
+        }
+
         stmt.close();
+
+        // Adaugă în memorie după ce a fost inserat cu succes
+        prescriptions.add(prescription);
 
         AuditService.getInstance().log("CREATE_PRESCRIPTION: ID=" + prescription.getId());
     }
+
 
     public List<Prescription> getAllPrescriptions() {
         AuditService.getInstance().log("READ_ALL_PRESCRIPTIONS");
@@ -184,5 +198,14 @@ public class PrescriptionService {
     public void reloadPrescriptions() {
         loadFromDatabase();
     }
+    public List<Prescription> getPrescriptionsByDiagnosisId(int diagnosisId) {
+        List<Prescription> result = prescriptions.stream()
+                .filter(p -> p.getDiagnosisId() == diagnosisId)
+                .collect(Collectors.toList());
+
+        AuditService.getInstance().log("GET_PRESCRIPTIONS_BY_DIAGNOSIS_ID: " + diagnosisId);
+        return result;
+    }
+
 
 }

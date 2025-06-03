@@ -131,8 +131,26 @@ public class DiagnosisMenu {
     private void showPrescriptionsForDiagnosis() {
         System.out.print("Nume diagnostic: ");
         String name = scanner.nextLine();
-        diagnosisService.displayPrescriptionsForDiagnosis(name);
+        Diagnosis diagnosis = findDiagnosisByNameLocal(name);
+        prescriptionService.reloadPrescriptions();
+
+
+        if (diagnosis == null) {
+            System.out.println("❌ Diagnosticul nu a fost găsit.");
+            return;
+        }
+
+        List<Prescription> prescriptions = prescriptionService.getPrescriptionsByDiagnosisId(diagnosis.getId());
+        if (prescriptions.isEmpty()) {
+            System.out.println("📭 Nicio prescripție asociată cu acest diagnostic.");
+        } else {
+            System.out.println("📋 Prescripții pentru " + diagnosis.getName() + ":");
+            prescriptions.forEach(System.out::println);
+        }
+
+        AuditService.getInstance().log("DISPLAY_PRESCRIPTIONS_FOR_DIAGNOSIS: " + name);
     }
+
 
     private void updateDiagnosis() {
         System.out.print("Numele diagnostic de actualizat: ");
@@ -237,11 +255,8 @@ public class DiagnosisMenu {
         } else {
             System.out.println("❌ Eroare la adăugarea rețetei.");
         }
-
-        prescriptionService.addPrescription(p);
-        System.out.println("✅ Rețetă adăugată.");
-        AuditService.getInstance().log("CREATE_PRESCRIPTION: " + medication);
     }
+
 
     private Diagnosis findDiagnosisByNameLocal(String name) {
         return currentPatient.getMedicalRecord()

@@ -251,4 +251,37 @@ public class NurseService {
 
         updateNurseById(id, nurse);
     }
+    public List<Nurse> getNursesForDoctor(int doctorId) {
+        List<Nurse> nursesForDoctor = new ArrayList<>();
+
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            String sql = "SELECT n.* FROM nurses n " +
+                    "JOIN doctor_nurse dn ON n.id = dn.nurse_id " +
+                    "WHERE dn.doctor_id = ?";
+            PreparedStatement stmt = conn.prepareStatement(sql);
+            stmt.setInt(1, doctorId);
+            ResultSet rs = stmt.executeQuery();
+
+            while (rs.next()) {
+                Nurse nurse = new Nurse(
+                        rs.getString("first_name"),
+                        rs.getString("last_name"),
+                        rs.getString("email"),
+                        rs.getString("phone_number"),
+                        Shift.valueOf(rs.getString("shift")),
+                        rs.getString("staff_code"),
+                        rs.getString("certifications"),
+                        rs.getInt("years_of_experience"),
+                        rs.getBoolean("is_on_call")
+                );
+                nurse.setId(rs.getInt("id"));
+                nursesForDoctor.add(nurse);
+            }
+        } catch (SQLException e) {
+            System.err.println("❌ Eroare la încărcarea asistentelor pentru doctor: " + e.getMessage());
+        }
+
+        return nursesForDoctor;
+    }
+
 }
